@@ -170,7 +170,7 @@ export default function UserManagement() {
         {/* Header */}
         <div className="um-header">
           <h1>Utilisateurs</h1>
-          <p>Géstion des utilisateurs.</p>
+          <p>Gestion des utilisateurs.</p>
         </div>
 
         {/* Toolbar */}
