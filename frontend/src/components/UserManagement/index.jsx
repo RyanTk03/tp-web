@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Plus,
@@ -6,19 +6,18 @@ import {
   Trash2,
   Users,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import "./index.css";
 
-const INITIAL_USERS = [
-  { id: 1, name: "Test t1",  email: "t1@example.com", role: "admin",  status: "active",   joined: "2026-01-15" },
-  { id: 2, name: "Test t2",    email: "t2@example.com",   role: "editor", status: "active",   joined: "2026-02-02" },
-  { id: 3, name: "Test t3",   email: "t3@example.com", role: "viewer", status: "inactive", joined: "2026-03-18" },
-  { id: 4, name: "Test t4",    email: "t4@example.com", role: "editor", status: "active",   joined: "2026-04-30" },
-  { id: 5, name: "Test t5",   email: "t5@example.com",   role: "viewer", status: "active",   joined: "2026-05-11" },
-];
+const API_BASE = "http://localhost:3001/api";
 
 const ROLE_LABELS  = { admin: "Admin", editor: "Éditeur", viewer: "Lecteur" };
-const ROLE_CLASSES = { admin: "um-badge um-badge-admin", editor: "um-badge um-badge-editor", viewer: "um-badge um-badge-viewer" };
+const ROLE_CLASSES = {
+  admin:  "um-badge um-badge-admin",
+  editor: "um-badge um-badge-editor",
+  viewer: "um-badge um-badge-viewer",
+};
 
 function getInitials(name) {
   return name.trim().split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
@@ -29,30 +28,58 @@ function getAvatarClass(name) {
   return `um-avatar um-avatar-${i}`;
 }
 
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (res.status === 204) return null;
+  const json = await res.json();
+  if (!res.ok) throw json;
+  return json;
+}
+
+const api = {
+  getUsers:    (q)      => apiFetch(`/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  createUser:  (body)   => apiFetch("/users",     { method: "POST",   body: JSON.stringify(body) }),
+  updateUser:  (id, body) => apiFetch(`/users/${id}`, { method: "PUT",    body: JSON.stringify(body) }),
+  deleteUser:  (id)     => apiFetch(`/users/${id}`, { method: "DELETE" }),
+};
+
 const EMPTY_FORM = { name: "", email: "", role: "viewer", status: "active" };
 
-function UserModal({ mode, user, onSave, onClose }) {
-  const [form, setForm]     = useState(mode === "edit" ? { ...user } : EMPTY_FORM);
-  const [errors, setErrors] = useState({});
+function UserModal({ mode, user, onSaved, onClose }) {
+  const [form,    setForm]    = useState(mode === "edit" ? { ...user } : EMPTY_FORM);
+  const [errors,  setErrors]  = useState({});
+  const [loading, setLoading] = useState(false);
 
   function handleChange(e) {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
     setErrors((err) => ({ ...err, [e.target.name]: "" }));
   }
 
-  function handleSubmit() {
-    const errs = {};
-    if (!form.name.trim())  errs.name  = "Le nom est requis";
-    if (!form.email.trim()) errs.email = "L'email est requis";
-    else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = "Email invalide";
-    if (Object.keys(errs).length > 0) return setErrors(errs);
-    onSave(form);
+  async function handleSubmit() {
+    setLoading(true);
+    try {
+      const result =
+        mode === "edit"
+          ? await api.updateUser(user.id, form)
+          : await api.createUser(form);
+      onSaved(result.data);
+    } catch (err) {
+      if (err.errors) setErrors(err.errors);
+      else setErrors({ _global: err.error || "Une erreur est survenue" });
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="um-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="um-modal">
         <h3>{mode === "edit" ? "Modifier l'utilisateur" : "Nouvel utilisateur"}</h3>
+
+        {errors._global && <p className="um-field-error um-error-banner">{errors._global}</p>}
 
         <div className="um-form-group">
           <label>Nom complet</label>
@@ -98,8 +125,11 @@ function UserModal({ mode, user, onSave, onClose }) {
         </div>
 
         <div className="um-modal-footer">
-          <button className="um-btn" onClick={onClose}>Annuler</button>
-          <button className="um-btn um-btn-primary" onClick={handleSubmit}>
+          <button className="um-btn" onClick={onClose} disabled={loading}>
+            Annuler
+          </button>
+          <button className="um-btn um-btn-primary" onClick={handleSubmit} disabled={loading}>
+            {loading && <Loader2 size={13} className="um-spin" />}
             {mode === "edit" ? "Enregistrer" : "Créer"}
           </button>
         </div>
@@ -108,7 +138,21 @@ function UserModal({ mode, user, onSave, onClose }) {
   );
 }
 
-function DeleteModal({ user, onConfirm, onClose }) {
+function DeleteModal({ user, onDeleted, onClose }) {
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
+
+  async function handleConfirm() {
+    setLoading(true);
+    try {
+      await api.deleteUser(user.id);
+      onDeleted(user.id);
+    } catch (err) {
+      setError(err.error || "Une erreur est survenue");
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="um-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="um-modal">
@@ -120,9 +164,15 @@ function DeleteModal({ user, onConfirm, onClose }) {
           Êtes-vous sûr de vouloir supprimer <strong>{user.name}</strong> ?
           Cette action est irréversible.
         </p>
+        {error && <p className="um-field-error um-error-banner">{error}</p>}
         <div className="um-modal-footer">
-          <button className="um-btn" onClick={onClose}>Annuler</button>
-          <button className="um-btn um-btn-confirm-delete" onClick={onConfirm}>Supprimer</button>
+          <button className="um-btn" onClick={onClose} disabled={loading}>
+            Annuler
+          </button>
+          <button className="um-btn um-btn-confirm-delete" onClick={handleConfirm} disabled={loading}>
+            {loading && <Loader2 size={13} className="um-spin" />}
+            Supprimer
+          </button>
         </div>
       </div>
     </div>
@@ -130,36 +180,42 @@ function DeleteModal({ user, onConfirm, onClose }) {
 }
 
 export default function UserManagement() {
-  const [users,  setUsers]  = useState(INITIAL_USERS);
-  const [nextId, setNextId] = useState(6);
-  const [search, setSearch] = useState("");
-  const [modal,  setModal]  = useState(null);
+  const [users,   setUsers]   = useState([]);
+  const [search,  setSearch]  = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
+  const [modal,   setModal]   = useState(null);
 
-  const filtered = useMemo(
-    () => users.filter((u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
-    ),
-    [users, search]
-  );
-
-  function handleSave(form) {
-    if (modal.type === "create") {
-      setUsers((prev) => [
-        ...prev,
-        { ...form, id: nextId, joined: new Date().toISOString().slice(0, 10) },
-      ]);
-      setNextId((n) => n + 1);
-    } else {
-      setUsers((prev) =>
-        prev.map((u) => (u.id === modal.user.id ? { ...u, ...form } : u))
-      );
+  const fetchUsers = useCallback(async (q = "") => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getUsers(q);
+      setUsers(res.data);
+    } catch {
+      setError("Impossible de charger les utilisateurs.");
+    } finally {
+      setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => fetchUsers(search), 300);
+    return () => clearTimeout(timer);
+  }, [search, fetchUsers]);
+
+  function handleSaved(user) {
+    setUsers((prev) => {
+      const exists = prev.find((u) => u.id === user.id);
+      return exists
+        ? prev.map((u) => (u.id === user.id ? user : u))
+        : [...prev, user];
+    });
     setModal(null);
   }
 
-  function handleDelete() {
-    setUsers((prev) => prev.filter((u) => u.id !== modal.user.id));
+  function handleDeleted(id) {
+    setUsers((prev) => prev.filter((u) => u.id !== id));
     setModal(null);
   }
 
@@ -170,7 +226,7 @@ export default function UserManagement() {
         {/* Header */}
         <div className="um-header">
           <h1>Utilisateurs</h1>
-          <p>Gestion des utilisateurs.</p>
+          <p>Gérez les comptes et les permissions.</p>
         </div>
 
         {/* Toolbar */}
@@ -188,10 +244,13 @@ export default function UserManagement() {
               />
             </div>
             <span className="um-count">
-              {filtered.length} utilisateur{filtered.length !== 1 ? "s" : ""}
+              {loading ? "…" : `${users.length} utilisateur${users.length !== 1 ? "s" : ""}`}
             </span>
           </div>
-          <button className="um-btn um-btn-primary" onClick={() => setModal({ type: "create" })}>
+          <button
+            className="um-btn um-btn-primary"
+            onClick={() => setModal({ type: "create" })}
+          >
             <Plus size={15} />
             Nouvel utilisateur
           </button>
@@ -210,7 +269,35 @@ export default function UserManagement() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {/* Loading state */}
+              {loading && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="um-empty">
+                      <Loader2 size={24} className="um-spin um-empty-icon" />
+                      Chargement…
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {/* Error state */}
+              {!loading && error && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="um-empty um-error-state">
+                      <AlertTriangle size={24} className="um-empty-icon" />
+                      {error}
+                      <button className="um-btn um-btn-retry" onClick={() => fetchUsers(search)}>
+                        Réessayer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {/* Empty state */}
+              {!loading && !error && users.length === 0 && (
                 <tr>
                   <td colSpan={5}>
                     <div className="um-empty">
@@ -219,66 +306,58 @@ export default function UserManagement() {
                     </div>
                   </td>
                 </tr>
-              ) : (
-                filtered.map((user) => (
-                  <tr key={user.id}>
-                    {/* Utilisateur */}
-                    <td>
-                      <div className="um-user-cell">
-                        <div className={getAvatarClass(user.name)}>
-                          {getInitials(user.name)}
-                        </div>
-                        <div>
-                          <div className="um-user-name">{user.name}</div>
-                          <div className="um-user-email">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Rôle */}
-                    <td>
-                      <span className={ROLE_CLASSES[user.role]}>
-                        {ROLE_LABELS[user.role]}
-                      </span>
-                    </td>
-
-                    {/* Statut */}
-                    <td>
-                      <span className={`um-badge ${user.status === "active" ? "um-badge-active" : "um-badge-inactive"}`}>
-                        <span className={`um-status-dot ${user.status === "active" ? "um-dot-active" : "um-dot-inactive"}`} />
-                        {user.status === "active" ? "Actif" : "Inactif"}
-                      </span>
-                    </td>
-
-                    {/* Date */}
-                    <td className="um-date">
-                      {new Date(user.joined).toLocaleDateString("fr-FR", {
-                        day: "2-digit", month: "short", year: "numeric",
-                      })}
-                    </td>
-
-                    {/* Actions */}
-                    <td>
-                      <div className="um-actions">
-                        <button
-                          className="um-btn um-btn-edit-ghost"
-                          onClick={() => setModal({ type: "edit", user })}
-                        >
-                          <Pencil size={13} />
-                          Modifier
-                        </button>
-                        <button
-                          className="um-btn um-btn-danger-ghost"
-                          onClick={() => setModal({ type: "delete", user })}
-                        >
-                          <Trash2 size={13} />
-                          Supprimer
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
               )}
+
+              {/* Rows */}
+              {!loading && !error && users.map((user) => (
+                <tr key={user.id}>
+                  <td>
+                    <div className="um-user-cell">
+                      <div className={getAvatarClass(user.name)}>
+                        {getInitials(user.name)}
+                      </div>
+                      <div>
+                        <div className="um-user-name">{user.name}</div>
+                        <div className="um-user-email">{user.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span className={ROLE_CLASSES[user.role]}>
+                      {ROLE_LABELS[user.role]}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`um-badge ${user.status === "active" ? "um-badge-active" : "um-badge-inactive"}`}>
+                      <span className={`um-status-dot ${user.status === "active" ? "um-dot-active" : "um-dot-inactive"}`} />
+                      {user.status === "active" ? "Actif" : "Inactif"}
+                    </span>
+                  </td>
+                  <td className="um-date">
+                    {new Date(user.joined).toLocaleDateString("fr-FR", {
+                      day: "2-digit", month: "short", year: "numeric",
+                    })}
+                  </td>
+                  <td>
+                    <div className="um-actions">
+                      <button
+                        className="um-btn um-btn-edit-ghost"
+                        onClick={() => setModal({ type: "edit", user })}
+                      >
+                        <Pencil size={13} />
+                        Modifier
+                      </button>
+                      <button
+                        className="um-btn um-btn-danger-ghost"
+                        onClick={() => setModal({ type: "delete", user })}
+                      >
+                        <Trash2 size={13} />
+                        Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -289,14 +368,14 @@ export default function UserManagement() {
         <UserModal
           mode={modal.type}
           user={modal.user}
-          onSave={handleSave}
+          onSaved={handleSaved}
           onClose={() => setModal(null)}
         />
       )}
       {modal?.type === "delete" && (
         <DeleteModal
           user={modal.user}
-          onConfirm={handleDelete}
+          onDeleted={handleDeleted}
           onClose={() => setModal(null)}
         />
       )}
