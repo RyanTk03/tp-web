@@ -9,8 +9,10 @@ import {
   Loader2,
 } from "lucide-react";
 import "./index.css";
-
-const API_BASE = "http://localhost:3001/api";
+import { api } from "../../libs/api";
+import { getAvatarClass, getInitials } from "../../libs/utils";
+import UserModal from "../UserModal";
+import DeleteModal from "../DeleteModal";
 
 const ROLE_LABELS  = { admin: "Admin", editor: "Éditeur", viewer: "Lecteur" };
 const ROLE_CLASSES = {
@@ -18,166 +20,6 @@ const ROLE_CLASSES = {
   editor: "um-badge um-badge-editor",
   viewer: "um-badge um-badge-viewer",
 };
-
-function getInitials(name) {
-  return name.trim().split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
-}
-
-function getAvatarClass(name) {
-  const i = (name.charCodeAt(0) + name.charCodeAt(name.length - 1)) % 6;
-  return `um-avatar um-avatar-${i}`;
-}
-
-async function apiFetch(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  if (res.status === 204) return null;
-  const json = await res.json();
-  if (!res.ok) throw json;
-  return json;
-}
-
-const api = {
-  getUsers:    (q)      => apiFetch(`/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
-  createUser:  (body)   => apiFetch("/users",     { method: "POST",   body: JSON.stringify(body) }),
-  updateUser:  (id, body) => apiFetch(`/users/${id}`, { method: "PUT",    body: JSON.stringify(body) }),
-  deleteUser:  (id)     => apiFetch(`/users/${id}`, { method: "DELETE" }),
-};
-
-const EMPTY_FORM = { name: "", email: "", role: "viewer", status: "active" };
-
-function UserModal({ mode, user, onSaved, onClose }) {
-  const [form,    setForm]    = useState(mode === "edit" ? { ...user } : EMPTY_FORM);
-  const [errors,  setErrors]  = useState({});
-  const [loading, setLoading] = useState(false);
-
-  function handleChange(e) {
-    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
-    setErrors((err) => ({ ...err, [e.target.name]: "" }));
-  }
-
-  async function handleSubmit() {
-    setLoading(true);
-    try {
-      const result =
-        mode === "edit"
-          ? await api.updateUser(user.id, form)
-          : await api.createUser(form);
-      onSaved(result.data);
-    } catch (err) {
-      if (err.errors) setErrors(err.errors);
-      else setErrors({ _global: err.error || "Une erreur est survenue" });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="um-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="um-modal">
-        <h3>{mode === "edit" ? "Modifier l'utilisateur" : "Nouvel utilisateur"}</h3>
-
-        {errors._global && <p className="um-field-error um-error-banner">{errors._global}</p>}
-
-        <div className="um-form-group">
-          <label>Nom complet</label>
-          <input
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Jean Dupont"
-            className={errors.name ? "error" : ""}
-          />
-          {errors.name && <p className="um-field-error">{errors.name}</p>}
-        </div>
-
-        <div className="um-form-group">
-          <label>Email</label>
-          <input
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={handleChange}
-            placeholder="jean@exemple.com"
-            className={errors.email ? "error" : ""}
-          />
-          {errors.email && <p className="um-field-error">{errors.email}</p>}
-        </div>
-
-        <div className="um-form-row">
-          <div className="um-form-group">
-            <label>Rôle</label>
-            <select name="role" value={form.role} onChange={handleChange}>
-              <option value="admin">Admin</option>
-              <option value="editor">Éditeur</option>
-              <option value="viewer">Lecteur</option>
-            </select>
-          </div>
-          <div className="um-form-group">
-            <label>Statut</label>
-            <select name="status" value={form.status} onChange={handleChange}>
-              <option value="active">Actif</option>
-              <option value="inactive">Inactif</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="um-modal-footer">
-          <button className="um-btn" onClick={onClose} disabled={loading}>
-            Annuler
-          </button>
-          <button className="um-btn um-btn-primary" onClick={handleSubmit} disabled={loading}>
-            {loading && <Loader2 size={13} className="um-spin" />}
-            {mode === "edit" ? "Enregistrer" : "Créer"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteModal({ user, onDeleted, onClose }) {
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState(null);
-
-  async function handleConfirm() {
-    setLoading(true);
-    try {
-      await api.deleteUser(user.id);
-      onDeleted(user.id);
-    } catch (err) {
-      setError(err.error || "Une erreur est survenue");
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="um-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="um-modal">
-        <h3>
-          <AlertTriangle size={17} className="um-danger-icon" />
-          Supprimer l'utilisateur
-        </h3>
-        <p className="um-delete-text">
-          Êtes-vous sûr de vouloir supprimer <strong>{user.name}</strong> ?
-          Cette action est irréversible.
-        </p>
-        {error && <p className="um-field-error um-error-banner">{error}</p>}
-        <div className="um-modal-footer">
-          <button className="um-btn" onClick={onClose} disabled={loading}>
-            Annuler
-          </button>
-          <button className="um-btn um-btn-confirm-delete" onClick={handleConfirm} disabled={loading}>
-            {loading && <Loader2 size={13} className="um-spin" />}
-            Supprimer
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function UserManagement() {
   const [users,   setUsers]   = useState([]);
