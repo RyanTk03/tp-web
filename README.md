@@ -13,7 +13,6 @@
 4. [Installation](#4-installation)
 5. [Lancement](#5-lancement)
 6. [Fonctionnalités](#6-fonctionnalités)
-7. [Structure du projet](#7-structure-du-projet)
 8. [API Reference](#8-api-reference)
 
 ---
