@@ -31,8 +31,8 @@ Cette application permet de gérer une liste d'utilisateurs au travers d'une int
 ```
 ┌─────────────────────┐        HTTP/JSON        ┌──────────────────────┐
 │   React (port 5173) │  ─────────────────────► │  Express (port 3001) │
-│   UserManagement    │ ◄─────────────────────   │  REST API            │
-└─────────────────────┘                          └──────────┬───────────┘
+│   UserManagement    │ ◄─────────────────────  │  REST API            │
+└─────────────────────┘                         └──────────┬───────────┘
                                                             │
                                                     ┌───────▼──────┐
                                                     │  SQLite DB   │
@@ -102,6 +102,7 @@ npm run dev
 
 Au chargement, l'application récupère l'ensemble des utilisateurs enregistrés en base et les affiche dans un tableau. Une recherche en temps réel permet de filtrer par nom ou par adresse email.
 
+![]()
 ![Screenshot — liste des utilisateurs](./screenshots/01_liste.png)
 *Figure 1 — Vue principale : tableau des utilisateurs avec recherche.*
 
@@ -131,15 +132,6 @@ Un clic sur **Supprimer** ouvre une modale de confirmation avant d'émettre la r
 
 ![Screenshot — confirmation de suppression](./screenshots/04_suppression.png)
 *Figure 4 — Modal de confirmation avant suppression.*
-
----
-
-### 6.5 États de l'interface
-
-L'interface gère trois états distincts : chargement (spinner), erreur réseau (message + bouton *Réessayer*) et liste vide.
-
-![Screenshot — état de chargement et erreur](./screenshots/05_etats.png)
-*Figure 5 — Exemples d'états : chargement et erreur réseau.*
 
 ---
 
